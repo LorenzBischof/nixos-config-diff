@@ -1,0 +1,22 @@
+name: E2E Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  e2e-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Run e2e-check flake app
+        run: nix run .#e2e-check
