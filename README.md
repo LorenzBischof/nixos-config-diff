@@ -36,6 +36,32 @@ Build one with:
 nix build .#nix_2_34
 ```
 
+## Dependency Tracking
+
+The `nixosConfigurations` (`e2e-base`, `e2e-changed`) have `trackDependencies = true` and expose a `dependencyTracking` attribute with the following fields:
+
+- `counts` — summary statistics
+- `configValues` / `explicitConfigValues` — all or explicitly set config values
+- `leafNodes` / `explicitLeafNodes` — leaf nodes in the dependency graph
+- `keptNodes` — nodes retained after filtering
+- `rawDeps` / `filteredDeps` — raw and filtered dependency edges
+- `rawDotOutput` / `filteredDotOutput` — Graphviz DOT output
+
+Access them using the patched nix:
+
+```bash
+nix run .#nix_2_34 -- eval .#nixosConfigurations.e2e-base.dependencyTracking.counts
+nix run .#nix_2_34 -- eval .#nixosConfigurations.e2e-base.dependencyTracking.configValues --json
+nix run .#nix_2_34 -- eval .#nixosConfigurations.e2e-base.dependencyTracking.filteredDotOutput --raw > deps.dot
+nix run .#nix_2_34 -- build .#nixosConfigurations.e2e-base.config.system.build.toplevel
+```
+
+Or explore interactively:
+
+```bash
+nix run .#nix_2_34 -- repl .#nixosConfigurations.e2e-base
+```
+
 ## E2E Check
 
 Run the end-to-end diff check with:
