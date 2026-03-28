@@ -91,7 +91,7 @@ index 1ac9236..4d3de80 100644
                      def->eval(state, env, v);
                      return;
                  }
-@@ -1442,14 +1510,85 @@ void ExprSelect::eval(EvalState & state, Env & env, Value & v)
+@@ -1442,14 +1510,79 @@ void ExprSelect::eval(EvalState & state, Env & env, Value & v)
                          .debugThrow();
                  }
              }
@@ -146,12 +146,6 @@ index 1ac9236..4d3de80 100644
                  state.attrSelects[pos2]++;
          }
  
-+        if (trackedScopeId != 0 && !state.forceContextStack.empty()) {
-+            auto & ctx = state.forceContextStack.back();
-+            if (ctx.scopeId == trackedScopeId)
-+                state.recordDependency(trackedScopeId, ctx.originPath, accessedPath);
-+        }
-+
          state.forceValue(*vAttrs, (pos2 ? pos2 : this->pos));
  
 +        // Register sub-attrsets for recursive tracking so that later accesses
@@ -177,7 +171,7 @@ index 1ac9236..4d3de80 100644
      } catch (Error & e) {
          if (pos2) {
              auto pos2r = state.positions[pos2];
-@@ -1563,6 +1702,17 @@ void EvalState::callFunction(Value & fun, std::span<Value *> args, Value & vRes,
+@@ -1563,6 +1696,17 @@ void EvalState::callFunction(Value & fun, std::span<Value *> args, Value & vRes,
                     there is no matching actual argument but the formal
                     argument has a default, use the default. */
                  size_t attrsUsed = 0;
@@ -195,7 +189,7 @@ index 1ac9236..4d3de80 100644
                  for (auto & i : formals->formals) {
                      auto j = args[0]->attrs()->get(i.name);
                      if (!j) {
-@@ -1579,6 +1729,16 @@ void EvalState::callFunction(Value & fun, std::span<Value *> args, Value & vRes,
+@@ -1579,6 +1723,16 @@ void EvalState::callFunction(Value & fun, std::span<Value *> args, Value & vRes,
                          env2.values[displ++] = i.def->maybeThunk(*this, env2);
                      } else {
                          attrsUsed++;
@@ -315,7 +309,7 @@ diff --git a/src/libexpr/include/nix/expr/eval.hh b/src/libexpr/include/nix/expr
 index bea6161..d359b4f 100644
 --- a/src/libexpr/include/nix/expr/eval.hh
 +++ b/src/libexpr/include/nix/expr/eval.hh
-@@ -1092,6 +1092,96 @@ private:
+@@ -1092,6 +1092,95 @@ private:
      typedef boost::unordered_flat_map<PosIdx, size_t, std::hash<PosIdx>> AttrSelects;
      AttrSelects attrSelects;
  
@@ -336,7 +330,6 @@ index bea6161..d359b4f 100644
 +
 +    struct TrackingScope {
 +        TrackingScopeId id;
-+        const Bindings * trackedBindings;
 +        std::vector<DependencyRecord, traceable_allocator<DependencyRecord>> deps;
 +    };
 +
@@ -412,11 +405,10 @@ index bea6161..d359b4f 100644
      friend struct ExprOpUpdate;
      friend struct ExprOpConcatLists;
      friend struct ExprVar;
-@@ -1103,6 +1193,11 @@ private:
+@@ -1103,6 +1192,10 @@ private:
      friend void prim_getAttr(EvalState & state, const PosIdx pos, Value ** args, Value & v);
      friend void prim_match(EvalState & state, const PosIdx pos, Value ** args, Value & v);
      friend void prim_split(EvalState & state, const PosIdx pos, Value ** args, Value & v);
-+    friend void prim_trackAttrset(EvalState & state, const PosIdx pos, Value ** args, Value & v);
 +    friend void prim_createTrackingScope(EvalState & state, const PosIdx pos, Value ** args, Value & v);
 +    friend void prim_registerTrackedAttrset(EvalState & state, const PosIdx pos, Value ** args, Value & v);
 +    friend void prim_tagThunkOrigin(EvalState & state, const PosIdx pos, Value ** args, Value & v);
@@ -501,7 +493,7 @@ index 3fb31fb..72bd7df 100644
      // !!! add to stack trace?
      if (state.countCalls && i->pos)
          state.attrSelects[i->pos]++;
-@@ -5131,6 +5188,276 @@ static RegisterPrimOp primop_splitVersion({
+@@ -5131,6 +5188,186 @@ static RegisterPrimOp primop_splitVersion({
      .impl = prim_splitVersion,
  });
  
@@ -550,45 +542,11 @@ index 3fb31fb..72bd7df 100644
 +    v.mkList(list);
 +}
 +
-+void prim_trackAttrset(EvalState & state, const PosIdx pos, Value ** args, Value & v)
-+{
-+    state.forceAttrs(*args[0], pos, "while evaluating the argument passed to builtins.trackAttrset");
-+
-+    auto it = state.trackedBindings.find(args[0]->attrs());
-+    if (it != state.trackedBindings.end()) {
-+        v.mkInt(it->second.scopeId);
-+        return;
-+    }
-+
-+    EvalState::TrackingScopeId scopeId = state.nextTrackingScopeId++;
-+    EvalState::TrackingScope scope;
-+    scope.id = scopeId;
-+    scope.trackedBindings = args[0]->attrs();
-+    state.trackingScopes.push_back(std::move(scope));
-+    state.trackedBindings[args[0]->attrs()] = {scopeId, {}};
-+    state.trackingActive = true;
-+
-+    v.mkInt(scopeId);
-+}
-+
-+static RegisterPrimOp primop_trackAttrset({
-+    .name = "__trackAttrset",
-+    .args = {"attrset"},
-+    .doc = R"(
-+      Register an attribute set for dependency tracking and return its scope ID.
-+      When attribute accesses on this attrset occur during evaluation of tagged
-+      thunks, they will be recorded as dependencies.
-+    )",
-+    .impl = prim_trackAttrset,
-+    .experimentalFeature = Xp::DependencyTracking,
-+});
-+
 +void prim_createTrackingScope(EvalState & state, const PosIdx pos, Value ** args, Value & v)
 +{
 +    EvalState::TrackingScopeId scopeId = state.nextTrackingScopeId++;
 +    EvalState::TrackingScope scope;
 +    scope.id = scopeId;
-+    scope.trackedBindings = nullptr;
 +    state.trackingScopes.push_back(std::move(scope));
 +    state.trackingActive = true;
 +
@@ -620,7 +578,6 @@ index 3fb31fb..72bd7df 100644
 +
 +    auto it = state.trackedBindings.find(args[1]->attrs());
 +    if (it == state.trackedBindings.end() || it->second.scopeId == scopeIdVal) {
-+        scope->trackedBindings = args[1]->attrs();
 +        state.trackedBindings[args[1]->attrs()] = {scopeIdVal, {}};
 +    }
 +
@@ -717,61 +674,6 @@ index 3fb31fb..72bd7df 100644
 +      `{ accessor = [...]; accessed = [...]; }` records.
 +    )",
 +    .impl = prim_getDependencies,
-+    .experimentalFeature = Xp::DependencyTracking,
-+});
-+
-+void prim_getAttrTagged(EvalState & state, const PosIdx pos, Value ** args, Value & v)
-+{
-+    auto scopeId = state.forceInt(*args[0], pos, "while evaluating the first argument passed to builtins.getAttrTagged");
-+    state.forceList(*args[1], pos, "while evaluating the second argument passed to builtins.getAttrTagged");
-+    state.forceAttrs(*args[2], pos, "while evaluating the third argument passed to builtins.getAttrTagged");
-+
-+    EvalState::TrackingAttrPath path;
-+    for (auto elem : args[1]->listView()) {
-+        state.forceStringNoCtx(*elem, pos, "while evaluating a path element in builtins.getAttrTagged");
-+        path.push_back(state.symbols.create(elem->string_view()));
-+    }
-+
-+    if (path.empty())
-+        state.error<EvalError>("empty attribute path").atPos(pos).debugThrow();
-+
-+    Value * current = args[2];
-+    for (size_t i = 0; i < path.size(); i++) {
-+        state.forceAttrs(*current, pos, "while navigating attribute path in builtins.getAttrTagged");
-+        auto attr = current->attrs()->get(path[i]);
-+        if (!attr)
-+            state.error<EvalError>("attribute '%s' missing", state.symbols[path[i]]).atPos(pos).debugThrow();
-+        current = attr->value;
-+    }
-+
-+    if (current->isThunk() || current->isApp())
-+        state.tagThunkOrigin(current, scopeId.value, path);
-+
-+    EvalState::ForceContext ctx;
-+    ctx.scopeId = scopeId.value;
-+    ctx.originPath = path;
-+    state.forceContextStack.push_back(std::move(ctx));
-+
-+    try {
-+        state.forceValue(*current, pos);
-+    } catch (...) {
-+        state.forceContextStack.pop_back();
-+        throw;
-+    }
-+
-+    state.forceContextStack.pop_back();
-+    v = *current;
-+}
-+
-+static RegisterPrimOp primop_getAttrTagged({
-+    .name = "__getAttrTagged",
-+    .args = {"scopeId", "path", "attrset"},
-+    .doc = R"(
-+      Access and evaluate an attribute from a tracked attrset with dependency
-+      recording. Navigates to the attribute path, pushes it as accessor context,
-+      forces the value (recording dependencies), and returns the result.
-+    )",
-+    .impl = prim_getAttrTagged,
 +    .experimentalFeature = Xp::DependencyTracking,
 +});
 +
