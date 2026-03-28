@@ -62,6 +62,30 @@
           default = nix_2_34.nix-cli;
         };
 
+      apps.x86_64-linux.diff-svg =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          diff-svg = pkgs.writeShellApplication {
+            name = "diff-svg";
+            runtimeInputs = [
+              pkgs.python3
+              pkgs.graphviz
+            ];
+            text = ''
+              if [ "$#" -ne 2 ]; then
+                echo "Usage: diff-svg BASE_TOPLEVEL CHANGED_TOPLEVEL" >&2
+                echo "Example: diff-svg /nix/var/nix/profiles/system-42-link /nix/var/nix/profiles/system-43-link" >&2
+                exit 1
+              fi
+              exec python3 ${./diff-svg.py} "$1" "$2"
+            '';
+          };
+        in
+        {
+          type = "app";
+          program = "${diff-svg}/bin/diff-svg";
+        };
+
       apps.x86_64-linux.e2e-check =
         let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;

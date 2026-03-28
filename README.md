@@ -36,6 +36,25 @@ Build one with:
 nix build .#nix_2_34
 ```
 
+## Diff SVG
+
+Generate an SVG dependency graph showing which options changed between two toplevels:
+
+```bash
+nix run .#diff-svg -- /nix/var/nix/profiles/system-42-link /nix/var/nix/profiles/system-43-link > diff.svg
+```
+
+Both toplevels must have been built with `trackDependencies = true`.
+
+### Example
+
+The `e2e-changed` configuration adds `networking.hostName = "tracked-test"` on top of `e2e-base`:
+
+![Dependency graph for networking.hostName](diff.svg)
+
+- Red: user-changed options
+- Yellow: options that depend on the changed options
+
 ## Dependency Tracking
 
 The `nixosConfigurations` (`e2e-base`, `e2e-changed`) have `trackDependencies = true` and expose a `dependencyTracking` attribute with the following fields:
