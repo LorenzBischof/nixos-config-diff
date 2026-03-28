@@ -6,49 +6,31 @@
 
 ## Attribution
 
-This repository builds on work by [oddlama](https://github.com/oddlama).
-The underlying idea and original implementation come from oddlama's work.
+This repository packages local copies of the Nix evaluator patches used for configuration-level NixOS diffing. The underlying idea, patches, and original implementation come from [oddlama](https://github.com/oddlama):
 
-Relevant upstream context:
-
-- Discourse announcement: <https://discourse.nixos.org/t/diffing-nixos-configurations-at-the-config-level/75554>
+- Discourse: <https://discourse.nixos.org/t/diffing-nixos-configurations-at-the-config-level/75554>
 - Blog post: <https://oddlama.org/blog/tracking-options-in-nixos/>
 - Diffing tool: <https://github.com/oddlama/nixos-config-tui>
-- Patched `nix` branch: <https://github.com/oddlama/nix/tree/thunk-origins-v1>
-- Patched `nixpkgs` branch: <https://github.com/oddlama/nixpkgs/tree/thunk-origins-v1>
+- Patched `nix`: <https://github.com/oddlama/nix/tree/thunk-origins-v1>
+- Patched `nixpkgs`: <https://github.com/oddlama/nixpkgs/tree/thunk-origins-v1>
 
+## Quick Start
 
-This repository packages local copies of the Nix evaluator patches used for configuration-level NixOS diffing.
+The flake provides patched `nix` CLIs for `2.33` and `2.34`, plus helper apps such as `diff-svg`, `e2e-check`, and `benchmark`.
 
-The patches in [`patches/`](./patches) are derived from oddlama's work on tracking NixOS option values and dependencies, and are exposed here as a small flake that builds patched `nix` CLI packages for Nix `2.33` and `2.34`.
-
-## Packages
-
-This flake provides:
-
-- `.#nix_2_33`
-- `.#nix_2_34`
-- `.#default` (`nix_2_34`)
-
-Build one with:
+Build the default patched `nix` (`2.34`):
 
 ```bash
 nix build .#nix_2_34
 ```
 
-## Diff SVG
-
-Generate an SVG dependency graph showing which options changed between two toplevels:
+Generate an SVG graph for changes between two tracked toplevels:
 
 ```bash
 nix run .#diff-svg -- /nix/var/nix/profiles/system-42-link /nix/var/nix/profiles/system-43-link > diff.svg
 ```
 
-Both toplevels must have been built with `trackDependencies = true`.
-
-### Example
-
-The `e2e-changed` configuration adds `networking.hostName = "tracked-test"` on top of `e2e-base`:
+Both toplevels must have been built with `trackDependencies = true`. The included example changes `networking.hostName` in `e2e-changed` relative to `e2e-base`:
 
 ![Dependency graph for networking.hostName](diff.svg)
 
@@ -57,16 +39,7 @@ The `e2e-changed` configuration adds `networking.hostName = "tracked-test"` on t
 
 ## Dependency Tracking
 
-The `nixosConfigurations` (`e2e-base`, `e2e-changed`) have `trackDependencies = true` and expose a `dependencyTracking` attribute with the following fields:
-
-- `counts` — summary statistics
-- `configValues` / `explicitConfigValues` — all or explicitly set config values
-- `leafNodes` / `explicitLeafNodes` — leaf nodes in the dependency graph
-- `keptNodes` — nodes retained after filtering
-- `rawDeps` / `filteredDeps` — raw and filtered dependency edges
-- `rawDotOutput` / `filteredDotOutput` — Graphviz DOT output
-
-Access them using the patched nix:
+`e2e-base` and `e2e-changed` expose a `dependencyTracking` attrset with counts, config values, dependency edges, and DOT output. Inspect it with the patched `nix`:
 
 ```bash
 nix run .#nix_2_34 -- eval .#nixosConfigurations.e2e-base.dependencyTracking.counts
@@ -75,16 +48,29 @@ nix run .#nix_2_34 -- eval .#nixosConfigurations.e2e-base.dependencyTracking.fil
 nix run .#nix_2_34 -- build .#nixosConfigurations.e2e-base.config.system.build.toplevel
 ```
 
-Or explore interactively:
+Or open a REPL:
 
 ```bash
 nix run .#nix_2_34 -- repl .#nixosConfigurations.e2e-base
 ```
 
-## E2E Check
-
-Run the end-to-end diff check with:
+## Checks
 
 ```bash
 nix run .#e2e-check
 ```
+
+This builds `e2e-base` and `e2e-changed` with both patched Nix versions and verifies that `nixos-config text-diff` matches across `nix_2_33` and `nix_2_34`.
+
+```bash
+nix run .#benchmark
+```
+
+Or benchmark a specific version:
+
+```bash
+nix run .#benchmark -- 2_34
+nix run .#benchmark -- 2_33
+```
+
+This compares upstream and patched `nix` on `benchmark-base` for `eval ...drvPath` and `build --no-link ...toplevel`, then writes `benchmark-<version>.md` and `benchmark-<version>.json`.
