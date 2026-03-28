@@ -102,7 +102,7 @@
                 local config="$1"
 
                 nix build \
-                  --extra-experimental-features 'nix-command flakes' \
+                  --extra-experimental-features 'nix-command flakes dependency-tracking' \
                   --print-out-paths \
                   --no-link \
                   "path:${self}#nixosConfigurations.$config.config.system.build.toplevel"
